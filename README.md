@@ -1,14 +1,23 @@
-# WordPress plugin təhlükəsizlik skaneri
+# WordPress plugin təhlükəsizlik skaneri + Codex
 
-Kali Linux-da WordPress.org-un ən populyar pluginlərini ZIP kimi yükləyir, açır və `semgrep scan --config p/wordpress` ilə statik analiz edir. Tapıntı olmayan açılmış plugin qovluğu silinir; tapıntı və ya skan xətası olan qovluq saxlanılır. Arxivlər və hesabatlar saxlanılır.
+Kali Linux-da WordPress.org-un ən populyar pluginlərini ZIP kimi yükləyir, açır və `semgrep scan --config p/wordpress` ilə statik analiz edir. Tapıntı olmayan açılmış plugin qovluğu silinir; tapıntı və ya skan xətası olan qovluq saxlanılır. Arxivlər və hesabatlar saxlanılır. Skan bitəndə tapıntılar varsa, skript eyni terminalda Codex CLI-nin interaktiv pəncərəsini ilkin tapşırıqla açır. Codex hesabatı və saxlanmış plugin kodunu oxuyur.
 
 ## Tələblər
 
 - Kali Linux, Python 3.10+ və internet bağlantısı
 - Əskik sistem paketlərini quraşdırmaq üçün `sudo` hüququ
-- İstəyə bağlı GPT analizi üçün OpenAI API açarı
+- Codex CLI və bir dəfə ChatGPT hesabı ilə giriş; ayrıca OpenAI API açarı lazım deyil
 
 Skript əvvəlcə `curl` və `unzip` yoxlayır; lazım olsa `apt-get` ilə quraşdırır. Semgrep yoxdursa, `~/.local/share/wp-plugin-scanner/venv` daxilində virtual mühit yaradıb `pip install semgrep` işlədir.
+
+Codex üçün Kali-də birdəfəlik quraşdırma və giriş:
+
+```bash
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+codex
+```
+
+İlk `codex` açılışında “Sign in with ChatGPT” seçin. Quraşdırıcı `codex` əmrini PATH-ə əlavə etməyibsə, onun göstərdiyi PATH addımını yerinə yetirin. Brauzersiz mühitdə `codex login --device-auth` istifadə edə bilərsiniz.
 
 ## Kali-də işə salma
 
@@ -23,6 +32,7 @@ Başqa say və ya çıxış qovluğu:
 ```bash
 python3 scanner.py --count 10
 python3 scanner.py --output "$HOME/Downloads/wp-audit-results"
+python3 scanner.py --no-codex
 ```
 
 Nəticələr `~/Downloads/wp-plugin-scan-results/<tarix>-<id>/` altında saxlanılır:
@@ -34,14 +44,11 @@ report.txt      oxunaqlı hesabat
 report.json     tam JSON/Semgrep nəticələri
 ```
 
-## GPT qiymətləndirməsi
+## Codex qiymətləndirməsi
 
-```bash
-export OPENAI_API_KEY='sizin-api-akariniz'
-python3 scanner.py --llm --model gpt-5.5
-```
+`python3 scanner.py` işə salındıqda skan tamamlanır, sonra tapıntı varsa `codex --sandbox read-only --search "..."` avtomatik açılır. İlkin tapşırıqda tapıntıların qısa siyahısı var; tam məlumat `report.json`, `report.txt` və `extracted/` qovluğundadır. Codex terminalında əlavə suallar verə bilərsiniz. Tapıntı yoxdursa Codex açılmır. `--no-codex` avtomatik açılışı söndürür.
 
-`--llm` hər tapıntının kod kontekstini OpenAI Responses API-yə göndərir. API istifadəsi ödənişli ola bilər. Açarı repoya əlavə etməyin. Model cavabı təsdiqlənmiş zəiflik və ya CVE sübutu deyil; CVE üçün versiyanı və rəsmi advisory/CVE qeydini ayrıca yoxlayın.
+Codex mövcud deyilsə skan hesabatı yenə saxlanılır və quraşdırma barədə xəta göstərilir. Codex-in cavabı təsdiqlənmiş boşluq və ya CVE sübutu deyil; versiyanı və rəsmi advisory/CVE qeydini ayrıca yoxlayın.
 
 Skan statik analizdir: yanlış pozitiv və ötürülən boşluqlar mümkündür. Semgrep qaydalarının yüklənməsi üçün internet lazımdır. Skan xətası olduqda plugin təmiz sayılmır və açılmış qovluq saxlanılır. ZIP yolları, symlink-lər, fayl sayı və açılmış ölçü yoxlanılır; plugin kodu icra edilmir.
 

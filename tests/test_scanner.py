@@ -52,6 +52,22 @@ class ScannerTests(unittest.TestCase):
         with patch.object(scanner.subprocess, "run", return_value=result):
             self.assertEqual(scanner.scan("semgrep", Path(".")), [finding])
 
+    def test_codex_opens_with_report_context(self):
+        report = {"plugins": [{
+            "slug": "sample", "version": "1.0",
+            "findings": [{"check_id": "rule", "path": "sample/main.php",
+                          "start": {"line": 12}}],
+        }]}
+        result = type("Result", (), {"returncode": 0})()
+        with patch.object(scanner.shutil, "which", return_value="codex"):
+            with patch("builtins.print"):
+                with patch.object(scanner.subprocess, "run", return_value=result) as run:
+                    scanner.open_codex(Path("/tmp/results"), report)
+        args, kwargs = run.call_args
+        self.assertEqual(args[0][:4], ["codex", "--sandbox", "read-only", "--search"])
+        self.assertIn("sample/main.php:12", args[0][4])
+        self.assertEqual(kwargs["cwd"], Path("/tmp/results"))
+
 
 if __name__ == "__main__":
     unittest.main()
