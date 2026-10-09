@@ -85,6 +85,75 @@ class ScannerTests(unittest.TestCase):
         self.assertIn("sample/main.php:12", args[0][4])
         self.assertEqual(kwargs["cwd"], Path("/tmp/results"))
 
+    def test_codex_structured_review_uses_saved_chatgpt_login(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run_dir = Path(temp)
+            def fake_run(command, **kwargs):
+                answer_path = Path(command[command.index("--output-last-message") + 1])
+                answer_path.write_text(json.dumps({
+                    "verdict": "false_positive", "summary": "Protected by capability check",
+                    "evidence": ["plugin/main.php:12"],
+                }), encoding="utf-8")
+                return type("Result", (), {"returncode": 0})()
+            with patch.object(scanner.shutil, "which", return_value="codex"):
+                with patch("builtins.print"):
+                    with patch.object(scanner.subprocess, "run", side_effect=fake_run) as run:
+                        review = scanner.review_with_codex(run_dir, "plugin", "1.0")
+        self.assertEqual(review["verdict"], "false_positive")
+        command = run.call_args.args[0]
+        self.assertIn("--output-schema", command)
+        self.assertIn("--skip-git-repo-check", command)
+        self.assertEqual(command[-1], "-")
+
+    def test_false_positive_continues_and_is_skipped_next_run(self):
+        plugin = {
+            "slug": "sample", "version": "1.0",
+            "download_link": "https://downloads.wordpress.org/plugin/sample.zip",
+        }
+        finding = {
+            "check_id": "rule", "path": "sample/main.php",
+            "start": {"line": 12},
+            "extra": {"severity": "WARNING", "message": "Possible issue"},
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            run_dir = output / "old-run"
+            archives = run_dir / "archives"
+            extracted = run_dir / "extracted"
+            archives.mkdir(parents=True)
+            extracted.mkdir()
+            progress_path = output / "progress.json"
+            progress = {"completed": {}}
+            report = {"created_at": "test", "pages_scanned": 1, "plugins": []}
+            with patch.object(scanner, "download"):
+                with patch.object(scanner, "extract_safely", side_effect=lambda _a, d: d.mkdir()):
+                    with patch.object(scanner, "scan", return_value=[finding]):
+                        with patch.object(scanner, "review_with_codex", return_value={
+                            "verdict": "false_positive", "summary": "Guarded path",
+                            "evidence": ["sample/main.php:12"],
+                        }):
+                            with patch("builtins.print"):
+                                stopped = scanner.process_plugin(
+                                    plugin, "semgrep", archives, extracted, run_dir,
+                                    report, progress_path, progress, True,
+                                )
+            self.assertFalse(stopped)
+            self.assertEqual(report["plugins"][0]["status"], "false_positive")
+            self.assertFalse((extracted / "sample").exists())
+            self.assertEqual(scanner.load_progress(progress_path)["completed"],
+                             {"sample@1.0": "false_positive"})
+
+            with patch.object(sys, "argv", ["scanner.py", "--count", "1", "--output", temp]):
+                with patch.object(scanner, "ensure_tools", return_value="semgrep"):
+                    with patch.object(scanner, "get_plugins", return_value=([plugin], 1)):
+                        with patch.object(scanner, "process_plugin") as process:
+                            with patch.object(scanner, "open_codex") as codex:
+                                with patch("builtins.print"):
+                                    result = scanner.main()
+            self.assertEqual(result, 0)
+            process.assert_not_called()
+            codex.assert_not_called()
+
     def test_continues_to_next_page_and_stops_on_first_finding(self):
         pages = [
             ([{"slug": "clean-1"}, {"slug": "clean-2"}], 3),

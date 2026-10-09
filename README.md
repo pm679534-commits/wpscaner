@@ -1,6 +1,6 @@
 # WordPress plugin təhlükəsizlik skaneri + Codex
 
-Kali Linux-da WordPress.org-un populyar pluginlərini ZIP kimi yükləyir, açır və `semgrep scan --config p/wordpress --config p/php` ilə statik analiz edir. İlk səhifədə tapıntı yoxdursa növbəti səhifəyə keçir; **ilk Semgrep tapıntısına qədər** davam edir. Tapıntı olmayan açılmış plugin qovluğu silinir; tapıntı və ya skan xətası olan qovluq saxlanılır. Arxivlər və hesabatlar saxlanılır. Tapıntı çıxanda skript eyni terminalda Codex CLI-nin interaktiv pəncərəsini ilkin tapşırıqla açır. Codex hesabatı və saxlanmış plugin kodunu oxuyur.
+Kali Linux-da WordPress.org-un populyar pluginlərini ZIP kimi yükləyir, açır və `semgrep scan --config p/wordpress --config p/php` ilə statik analiz edir. Semgrep tapıntısı çıxanda Codex onu kod kontekstində yoxlayıb strukturlaşdırılmış qərar qaytarır. Yanlış pozitivdirsə skript növbəti pluginə keçir; ehtimal olunan boşluq və ya qeyri-müəyyən nəticə varsa saxlanmış kodla interaktiv Codex açılır. Təmiz və yanlış pozitiv nəticələr növbəti işə salmada təkrar skan edilmir.
 
 ## Tələblər
 
@@ -33,6 +33,7 @@ Başqa say və ya çıxış qovluğu:
 python3 scanner.py --count 10    # hər səhifədə 10 plugin
 python3 scanner.py --output "$HOME/Downloads/wp-audit-results"
 python3 scanner.py --no-codex
+python3 scanner.py --rescan      # əvvəl yoxlanan versiyaları da skan et
 ```
 
 Nəticələr `~/Downloads/wp-plugin-scan-results/<tarix>-<id>/` altında saxlanılır:
@@ -42,11 +43,14 @@ archives/       yüklənmiş ZIP-lər
 extracted/      tapıntılı və ya xətalı plugin kodu
 report.txt      oxunaqlı hesabat
 report.json     tam JSON/Semgrep nəticələri
+codex-review-*.json  Codex-in plugin üzrə qərarı (tapıntı varsa)
 ```
+
+`~/Downloads/wp-plugin-scan-results/progress.json` təmiz və yanlış pozitiv pluginlərin `slug@version` qeydini saxlayır. Eyni versiya növbəti işə salmada atlanır; yeni versiya skan edilir. `--rescan` yadda saxlanmış versiyaları da yenidən yoxlayır.
 
 ## Codex qiymətləndirməsi
 
-`python3 scanner.py` işə salındıqda populyar siyahı səhifə-səhifə skan edilir və ilk tapıntıda `codex --sandbox read-only --search "..."` avtomatik açılır. İlkin tapşırıqda tapıntının qısa xülasəsi var; tam məlumat `report.json`, `report.txt` və `extracted/` qovluğundadır. Codex terminalında əlavə suallar verə bilərsiniz. Bütün siyahı bitənə qədər tapıntı çıxmazsa skan dayanır və Codex açılmır. API eyni pluginləri təkrarlayarsa skan da təhlükəsiz şəkildə dayanır. `--no-codex` avtomatik açılışı söndürür.
+`python3 scanner.py` populyar siyahını səhifə-səhifə skan edir. Tapıntılı plugin üçün `codex exec` JSON qərarı yaradır: `false_positive` nəticəsində açılmış qovluq silinir və skan davam edir; `likely_vulnerability` və `needs_review` nəticəsində kod saxlanılır, interaktiv `codex` açılır. Skan və Codex qərarları hesabatda qalır. Bütün kataloq bitərsə və ya API yalnız təkrar pluginləri qaytararsa skan dayanır. `--no-codex` əvvəlki kimi ilk Semgrep tapıntısında dayanır və Codex-i işə salmır.
 
 Codex mövcud deyilsə skan hesabatı yenə saxlanılır və quraşdırma barədə xəta göstərilir. Codex-in cavabı təsdiqlənmiş boşluq və ya CVE sübutu deyil; versiyanı və rəsmi advisory/CVE qeydini ayrıca yoxlayın.
 
@@ -59,7 +63,7 @@ GitHub-da `wp-plugin-scanner` adlı boş repo yaratdıqdan sonra bu qovluqda:
 ```bash
 git init
 git branch -M main
-git add scanner.py README.md .gitignore tests/
+git add scanner.py codex-verdict.schema.json README.md .gitignore tests/
 git commit -m "Add WordPress plugin security scanner"
 git remote add origin <SIZIN_GITHUB_REPO_URL>
 git push -u origin main

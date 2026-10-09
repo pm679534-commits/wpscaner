@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["false_positive", "likely_vulnerability", "needs_review"]
+    },
+    "summary": {"type": "string"},
+    "evidence": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["verdict", "summary", "evidence"],
+  "additionalProperties": false
+}
