@@ -103,6 +103,7 @@ class ScannerTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertIn("--output-schema", command)
         self.assertIn("--skip-git-repo-check", command)
+        self.assertNotIn("--search", command)
         self.assertEqual(command[-1], "-")
 
     def test_false_positive_continues_and_is_skipped_next_run(self):
@@ -198,6 +199,31 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(result, 1)
         get.assert_called_once_with(1, 1)
         codex.assert_not_called()
+
+    def test_codex_failure_preserves_findings_in_terminal_message(self):
+        plugin = {"slug": "elementor", "version": "4.3.4"}
+        finding = {"check_id": "rule", "path": "elementor/main.php"}
+
+        def fail_review(_plugin, _semgrep, _archives, _extracted, _run_dir,
+                        report, _progress_path, _progress, _codex_enabled):
+            report["plugins"].append({
+                "slug": "elementor", "version": "4.3.4",
+                "status": "review_error", "findings": [finding],
+            })
+            raise scanner.ReviewError("Codex exit=2")
+
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(sys, "argv", ["scanner.py", "--count", "1", "--output", temp]):
+                with patch.object(scanner, "ensure_tools", return_value="semgrep"):
+                    with patch.object(scanner, "get_plugins", return_value=([plugin], 1)):
+                        with patch.object(scanner, "process_plugin", side_effect=fail_review):
+                            with patch("builtins.print") as printed:
+                                result = scanner.main()
+
+        self.assertEqual(result, 1)
+        messages = "\n".join(str(call.args[0]) for call in printed.call_args_list if call.args)
+        self.assertIn("1 Semgrep tapıntısı hesabatda saxlanılıb", messages)
+        self.assertNotIn("Semgrep tapıntısı yoxdur", messages)
 
 
 if __name__ == "__main__":

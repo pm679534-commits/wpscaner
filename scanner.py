@@ -221,7 +221,7 @@ def review_with_codex(run_dir, slug, version):
     print(f"  Codex {slug} tapıntılarını yoxlayır...", flush=True)
     try:
         result = subprocess.run(
-            [codex, "exec", "--sandbox", "read-only", "--search",
+            [codex, "exec", "--sandbox", "read-only",
              "--skip-git-repo-check", "--output-schema", str(schema),
              "--output-last-message", str(answer_file), "-"],
             input=prompt, cwd=run_dir, text=True, capture_output=True, timeout=900,
@@ -474,6 +474,9 @@ def main():
             print(f"Codex xətası: {exc}", file=sys.stderr)
             print(f"Əl ilə baxmaq üçün: codex --cd '{run_dir}'", file=sys.stderr)
             return 1
+    elif report.get("review_error"):
+        finding_count = sum(len(item["findings"]) for item in report["plugins"])
+        print(f"Codex yoxlaması alınmadı; {finding_count} Semgrep tapıntısı hesabatda saxlanılıb")
     elif not has_findings:
         if report.get("catalog_exhausted"):
             print("Populyar plugin siyahısı bitdi; Semgrep tapıntısı yoxdur")
