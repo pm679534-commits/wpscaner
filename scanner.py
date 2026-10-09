@@ -58,20 +58,23 @@ def ensure_tools():
     return str(semgrep)
 
 
-def get_plugins(count):
+def get_plugins(count, page):
     query = urllib.parse.urlencode({
         "action": "query_plugins", "request[browse]": "popular",
-        "request[per_page]": count, "request[page]": 1,
+        "request[per_page]": count, "request[page]": page,
     })
     request = urllib.request.Request(
         API_URL + "?" + query,
         headers={"User-Agent": "wp-plugin-scanner/1.0"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        plugins = json.load(response).get("plugins", [])
-    if not plugins:
-        raise RuntimeError("WordPress.org plugin siyahısı qaytarmadı")
-    return plugins[:count]
+        data = json.load(response)
+    plugins = data.get("plugins", [])
+    if not isinstance(plugins, list):
+        raise RuntimeError("WordPress.org API etibarsız plugin siyahısı qaytardı")
+    pages = data.get("info", {}).get("pages")
+    pages = int(pages) if str(pages).isdigit() else None
+    return plugins[:count], pages
 
 
 def validate_plugin(plugin):
@@ -185,7 +188,14 @@ def write_reports(run_dir, report):
     (run_dir / "report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    lines = [f"WordPress plugin skanı: {report['created_at']}", ""]
+    lines = [f"WordPress plugin skanı: {report['created_at']}",
+             f"Skan edilmiş səhifə sayı: {report['pages_scanned']}", ""]
+    if report.get("catalog_error"):
+        lines.append("Kataloq xətası: " + report["catalog_error"])
+        lines.append("")
+    elif report.get("catalog_exhausted"):
+        lines.append("Populyar plugin siyahısı bitdi; tapıntı aşkarlanmadı.")
+        lines.append("")
     for plugin in report["plugins"]:
         lines.append(f"{plugin['slug']} {plugin['version']}: {plugin['status']}")
         if plugin.get("error"):
@@ -201,9 +211,48 @@ def write_reports(run_dir, report):
     (run_dir / "report.txt").write_text("\n".join(lines), encoding="utf-8")
 
 
+def process_plugin(plugin, semgrep, archives, extracted, run_dir, report):
+    entry = {
+        "slug": str(plugin.get("slug", "?")),
+        "version": str(plugin.get("version", "?")),
+        "status": "error", "findings": [],
+    }
+    report["plugins"].append(entry)
+    try:
+        slug, url = validate_plugin(plugin)
+        archive = archives / f"{slug}.zip"
+        destination = extracted / slug
+        print(f"\n[{slug}] Yüklənir və skan edilir...", flush=True)
+        download(url, archive)
+        extract_safely(archive, destination)
+        findings = scan(semgrep, destination)
+        entry["findings"] = findings
+        if findings:
+            entry["status"] = "findings"
+            print(f"  {len(findings)} tapıntı; qovluq saxlanıldı", flush=True)
+            for finding in findings:
+                extra = finding.get("extra", {})
+                print(
+                    f"  [{extra.get('severity', '?')}] {finding.get('check_id')} "
+                    f"{finding.get('path')}:{finding.get('start', {}).get('line')} "
+                    f"— {extra.get('message', '')}",
+                    flush=True,
+                )
+        else:
+            shutil.rmtree(destination)  # Only this run's extraction directory.
+            entry["status"] = "no_findings"
+            print("  Tapıntı yoxdur; açılmış qovluq silindi", flush=True)
+    except Exception as exc:
+        entry["error"] = str(exc)
+        print(f"  XƏTA: {exc}", file=sys.stderr, flush=True)
+    finally:
+        write_reports(run_dir, report)
+    return bool(entry["findings"])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--count", type=int, default=10)
+    parser.add_argument("--count", type=int, default=10, help="Hər səhifədəki plugin sayı")
     parser.add_argument("--no-codex", action="store_true", help="Codex-i açmadan skan et")
     parser.add_argument(
         "--output", type=Path,
@@ -214,58 +263,66 @@ def main():
         parser.error("--count 1-100 aralığında olmalıdır")
 
     semgrep = ensure_tools()
-    plugins = get_plugins(args.count)
     run_name = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
     run_dir = args.output.expanduser().resolve() / run_name
     archives = run_dir / "archives"
     extracted = run_dir / "extracted"
     archives.mkdir(parents=True)
     extracted.mkdir()
-    report = {"created_at": datetime.now(timezone.utc).isoformat(), "plugins": []}
+    report = {"created_at": datetime.now(timezone.utc).isoformat(),
+              "pages_scanned": 0, "plugins": []}
     write_reports(run_dir, report)
     print(f"Nəticə qovluğu: {run_dir}", flush=True)
 
-    for plugin in plugins:
-        entry = {
-            "slug": str(plugin.get("slug", "?")),
-            "version": str(plugin.get("version", "?")),
-            "status": "error", "findings": [],
-        }
-        report["plugins"].append(entry)
+    page = 1
+    seen = set()
+    has_findings = False
+    while not has_findings:
         try:
-            slug, url = validate_plugin(plugin)
-            archive = archives / f"{slug}.zip"
-            destination = extracted / slug
-            print(f"\n[{slug}] Yüklənir və skan edilir...", flush=True)
-            download(url, archive)
-            extract_safely(archive, destination)
-            findings = scan(semgrep, destination)
-            entry["findings"] = findings
-            if findings:
-                entry["status"] = "findings"
-                print(f"  {len(findings)} tapıntı; qovluq saxlanıldı", flush=True)
-                for finding in findings:
-                    extra = finding.get("extra", {})
-                    print(
-                        f"  [{extra.get('severity', '?')}] {finding.get('check_id')} "
-                        f"{finding.get('path')}:{finding.get('start', {}).get('line')} "
-                        f"— {extra.get('message', '')}",
-                        flush=True,
-                    )
-            else:
-                shutil.rmtree(destination)  # Only this run's extraction directory.
-                entry["status"] = "no_findings"
-                print("  Tapıntı yoxdur; açılmış qovluq silindi", flush=True)
+            plugins, total_pages = get_plugins(args.count, page)
         except Exception as exc:
-            entry["error"] = str(exc)
-            print(f"  XƏTA: {exc}", file=sys.stderr, flush=True)
-        finally:
+            report["catalog_error"] = str(exc)
             write_reports(run_dir, report)
+            print(f"Plugin siyahısı alınmadı: {exc}", file=sys.stderr)
+            break
+        if not plugins:
+            if page == 1:
+                report["catalog_error"] = "WordPress.org boş plugin siyahısı qaytardı"
+            else:
+                report["catalog_exhausted"] = True
+            write_reports(run_dir, report)
+            break
+
+        report["pages_scanned"] = page
+        print(f"\nPopulyar pluginlər — səhifə {page}", flush=True)
+        new_plugins = 0
+        for plugin in plugins:
+            slug = str(plugin.get("slug", ""))
+            if slug in seen:
+                continue
+            seen.add(slug)
+            new_plugins += 1
+            has_findings = process_plugin(
+                plugin, semgrep, archives, extracted, run_dir, report
+            )
+            if has_findings:
+                break
+        if has_findings:
+            break
+        if new_plugins == 0:
+            report["catalog_error"] = "API yalnız əvvəl skan edilmiş pluginləri qaytardı"
+            write_reports(run_dir, report)
+            break
+        if (total_pages is not None and page >= total_pages) or len(plugins) < args.count:
+            report["catalog_exhausted"] = True
+            write_reports(run_dir, report)
+            break
+        page += 1
 
     print(f"\nHesabat: {run_dir / 'report.txt'}")
     print(f"JSON: {run_dir / 'report.json'}")
-    scan_failed = any(item["status"] == "error" for item in report["plugins"])
-    has_findings = any(item["findings"] for item in report["plugins"])
+    scan_failed = (bool(report.get("catalog_error"))
+                   or any(item["status"] == "error" for item in report["plugins"]))
     if has_findings and not args.no_codex:
         try:
             open_codex(run_dir, report)
@@ -274,7 +331,10 @@ def main():
             print(f"Əl ilə baxmaq üçün: codex --cd '{run_dir}'", file=sys.stderr)
             return 1
     elif not has_findings:
-        print("Semgrep tapıntısı yoxdur; Codex açılmadı")
+        if report.get("catalog_exhausted"):
+            print("Populyar plugin siyahısı bitdi; Semgrep tapıntısı yoxdur")
+        else:
+            print("Skan dayandı; Semgrep tapıntısı yoxdur")
     return 1 if scan_failed else 0
 
 

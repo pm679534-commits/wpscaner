@@ -1,6 +1,6 @@
 # WordPress plugin təhlükəsizlik skaneri + Codex
 
-Kali Linux-da WordPress.org-un ən populyar pluginlərini ZIP kimi yükləyir, açır və `semgrep scan --config p/wordpress` ilə statik analiz edir. Tapıntı olmayan açılmış plugin qovluğu silinir; tapıntı və ya skan xətası olan qovluq saxlanılır. Arxivlər və hesabatlar saxlanılır. Skan bitəndə tapıntılar varsa, skript eyni terminalda Codex CLI-nin interaktiv pəncərəsini ilkin tapşırıqla açır. Codex hesabatı və saxlanmış plugin kodunu oxuyur.
+Kali Linux-da WordPress.org-un populyar pluginlərini ZIP kimi yükləyir, açır və `semgrep scan --config p/wordpress` ilə statik analiz edir. İlk səhifədə tapıntı yoxdursa növbəti səhifəyə keçir; **ilk Semgrep tapıntısına qədər** davam edir. Tapıntı olmayan açılmış plugin qovluğu silinir; tapıntı və ya skan xətası olan qovluq saxlanılır. Arxivlər və hesabatlar saxlanılır. Tapıntı çıxanda skript eyni terminalda Codex CLI-nin interaktiv pəncərəsini ilkin tapşırıqla açır. Codex hesabatı və saxlanmış plugin kodunu oxuyur.
 
 ## Tələblər
 
@@ -30,7 +30,7 @@ python3 scanner.py
 Başqa say və ya çıxış qovluğu:
 
 ```bash
-python3 scanner.py --count 10
+python3 scanner.py --count 10    # hər səhifədə 10 plugin
 python3 scanner.py --output "$HOME/Downloads/wp-audit-results"
 python3 scanner.py --no-codex
 ```
@@ -46,7 +46,7 @@ report.json     tam JSON/Semgrep nəticələri
 
 ## Codex qiymətləndirməsi
 
-`python3 scanner.py` işə salındıqda skan tamamlanır, sonra tapıntı varsa `codex --sandbox read-only --search "..."` avtomatik açılır. İlkin tapşırıqda tapıntıların qısa siyahısı var; tam məlumat `report.json`, `report.txt` və `extracted/` qovluğundadır. Codex terminalında əlavə suallar verə bilərsiniz. Tapıntı yoxdursa Codex açılmır. `--no-codex` avtomatik açılışı söndürür.
+`python3 scanner.py` işə salındıqda populyar siyahı səhifə-səhifə skan edilir və ilk tapıntıda `codex --sandbox read-only --search "..."` avtomatik açılır. İlkin tapşırıqda tapıntının qısa xülasəsi var; tam məlumat `report.json`, `report.txt` və `extracted/` qovluğundadır. Codex terminalında əlavə suallar verə bilərsiniz. Bütün siyahı bitənə qədər tapıntı çıxmazsa skan dayanır və Codex açılmır. API eyni pluginləri təkrarlayarsa skan da təhlükəsiz şəkildə dayanır. `--no-codex` avtomatik açılışı söndürür.
 
 Codex mövcud deyilsə skan hesabatı yenə saxlanılır və quraşdırma barədə xəta göstərilir. Codex-in cavabı təsdiqlənmiş boşluq və ya CVE sübutu deyil; versiyanı və rəsmi advisory/CVE qeydini ayrıca yoxlayın.
 

@@ -68,6 +68,38 @@ class ScannerTests(unittest.TestCase):
         self.assertIn("sample/main.php:12", args[0][4])
         self.assertEqual(kwargs["cwd"], Path("/tmp/results"))
 
+    def test_continues_to_next_page_and_stops_on_first_finding(self):
+        pages = [
+            ([{"slug": "clean-1"}, {"slug": "clean-2"}], 3),
+            ([{"slug": "clean-2"}, {"slug": "found"}], 3),
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(sys, "argv", ["scanner.py", "--count", "2", "--output", temp]):
+                with patch.object(scanner, "ensure_tools", return_value="semgrep"):
+                    with patch.object(scanner, "get_plugins", side_effect=pages) as get:
+                        with patch.object(scanner, "process_plugin", side_effect=[False, False, True]) as process:
+                            with patch.object(scanner, "open_codex") as codex:
+                                with patch("builtins.print"):
+                                    result = scanner.main()
+        self.assertEqual(result, 0)
+        self.assertEqual(get.call_count, 2)
+        self.assertEqual([call.args[0]["slug"] for call in process.call_args_list],
+                         ["clean-1", "clean-2", "found"])
+        codex.assert_called_once()
+
+    def test_stops_when_catalog_is_exhausted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(sys, "argv", ["scanner.py", "--count", "2", "--output", temp]):
+                with patch.object(scanner, "ensure_tools", return_value="semgrep"):
+                    with patch.object(scanner, "get_plugins", return_value=([{"slug": "clean"}], 1)) as get:
+                        with patch.object(scanner, "process_plugin", return_value=False):
+                            with patch.object(scanner, "open_codex") as codex:
+                                with patch("builtins.print"):
+                                    result = scanner.main()
+        self.assertEqual(result, 0)
+        get.assert_called_once_with(2, 1)
+        codex.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
