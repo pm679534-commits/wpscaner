@@ -1,6 +1,6 @@
 # WordPress plugin təhlükəsizlik skaneri + Codex
 
-Kali Linux-da WordPress.org-un populyar pluginlərini ZIP kimi yükləyir, açır və `semgrep scan --config p/wordpress` ilə statik analiz edir. İlk səhifədə tapıntı yoxdursa növbəti səhifəyə keçir; **ilk Semgrep tapıntısına qədər** davam edir. Tapıntı olmayan açılmış plugin qovluğu silinir; tapıntı və ya skan xətası olan qovluq saxlanılır. Arxivlər və hesabatlar saxlanılır. Tapıntı çıxanda skript eyni terminalda Codex CLI-nin interaktiv pəncərəsini ilkin tapşırıqla açır. Codex hesabatı və saxlanmış plugin kodunu oxuyur.
+Kali Linux-da WordPress.org-un populyar pluginlərini ZIP kimi yükləyir, açır və `semgrep scan --config p/wordpress --config p/php` ilə statik analiz edir. İlk səhifədə tapıntı yoxdursa növbəti səhifəyə keçir; **ilk Semgrep tapıntısına qədər** davam edir. Tapıntı olmayan açılmış plugin qovluğu silinir; tapıntı və ya skan xətası olan qovluq saxlanılır. Arxivlər və hesabatlar saxlanılır. Tapıntı çıxanda skript eyni terminalda Codex CLI-nin interaktiv pəncərəsini ilkin tapşırıqla açır. Codex hesabatı və saxlanmış plugin kodunu oxuyur.
 
 ## Tələblər
 
@@ -50,7 +50,7 @@ report.json     tam JSON/Semgrep nəticələri
 
 Codex mövcud deyilsə skan hesabatı yenə saxlanılır və quraşdırma barədə xəta göstərilir. Codex-in cavabı təsdiqlənmiş boşluq və ya CVE sübutu deyil; versiyanı və rəsmi advisory/CVE qeydini ayrıca yoxlayın.
 
-Skan statik analizdir: yanlış pozitiv və ötürülən boşluqlar mümkündür. Semgrep qaydalarının yüklənməsi üçün internet lazımdır. Skan xətası olduqda plugin təmiz sayılmır və açılmış qovluq saxlanılır. ZIP yolları, symlink-lər, fayl sayı və açılmış ölçü yoxlanılır; plugin kodu icra edilmir.
+Skan statik analizdir: yanlış pozitiv və ötürülən boşluqlar mümkündür. Semgrep qaydalarının yüklənməsi üçün internet lazımdır. Skan xətası olduqda plugin təmiz sayılmır və açılmış qovluq saxlanılır. PHP faylları olduğu halda Semgrep sıfır fayl skan edərsə, skript diaqnostikanı hesabatda saxlayıb dayanır. ZIP yolları, symlink-lər, fayl sayı və açılmış ölçü yoxlanılır; plugin kodu icra edilmir.
 
 ## GitHub-a yükləmə
 

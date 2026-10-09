@@ -41,6 +41,23 @@ class ScannerTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 scanner.scan("semgrep", Path("."))
 
+    def test_php_files_without_coverage_stop_scan(self):
+        result = type("Result", (), {
+            "returncode": 0, "stdout": json.dumps({
+                "results": [], "errors": [], "paths": {"scanned": []},
+            }), "stderr": "0 files scanned",
+        })()
+        with tempfile.TemporaryDirectory() as temp:
+            (Path(temp) / "main.php").write_text("<?php echo 1;", encoding="utf-8")
+            with patch.object(scanner.subprocess, "run", return_value=result) as run:
+                with self.assertRaises(scanner.ScanCoverageError) as caught:
+                    scanner.scan("semgrep", Path(temp))
+        self.assertIn("PHP faylı: 1", str(caught.exception))
+        command = run.call_args.args[0]
+        self.assertEqual(command.count("--config"), 2)
+        self.assertIn("p/php", command)
+        self.assertIn("--no-git-ignore", command)
+
     def test_findings_are_not_scan_errors(self):
         finding = {"check_id": "test", "path": "plugin/main.php"}
         result = type("Result", (), {
@@ -98,6 +115,19 @@ class ScannerTests(unittest.TestCase):
                                     result = scanner.main()
         self.assertEqual(result, 0)
         get.assert_called_once_with(2, 1)
+        codex.assert_not_called()
+
+    def test_coverage_failure_does_not_advance_to_next_page(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(sys, "argv", ["scanner.py", "--count", "1", "--output", temp]):
+                with patch.object(scanner, "ensure_tools", return_value="semgrep"):
+                    with patch.object(scanner, "get_plugins", return_value=([{"slug": "elementor"}], 5)) as get:
+                        with patch.object(scanner, "process_plugin", side_effect=scanner.ScanCoverageError("no PHP coverage")):
+                            with patch.object(scanner, "open_codex") as codex:
+                                with patch("builtins.print"):
+                                    result = scanner.main()
+        self.assertEqual(result, 1)
+        get.assert_called_once_with(1, 1)
         codex.assert_not_called()
 
 

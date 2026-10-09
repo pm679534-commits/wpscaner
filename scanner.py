@@ -22,6 +22,10 @@ MAX_ZIP = 100 * 1024 * 1024
 MAX_EXPANDED = 300 * 1024 * 1024
 
 
+class ScanCoverageError(RuntimeError):
+    """The scan found PHP files but Semgrep inspected none of them."""
+
+
 def checked(command):
     print("+", " ".join(map(str, command)), flush=True)
     subprocess.run(command, check=True)
@@ -123,9 +127,9 @@ def extract_safely(archive, destination):
 
 def scan(semgrep, destination):
     result = subprocess.run(
-        [semgrep, "scan", "--config", "p/wordpress", "--json",
-         "--metrics", "off", "--disable-version-check", "--strict",
-         "--timeout", "60", "."],
+        [semgrep, "scan", "--config", "p/wordpress", "--config", "p/php",
+         "--json", "--metrics", "off", "--disable-version-check",
+         "--no-git-ignore", "--strict", "--verbose", "--timeout", "60", "."],
         cwd=destination, text=True, capture_output=True, timeout=900,
     )
     try:
@@ -138,8 +142,21 @@ def scan(semgrep, destination):
             + json.dumps(data.get("errors", []), ensure_ascii=False)[:1000]
             + " " + result.stderr[-1000:]
         )
-    if not data.get("paths", {}).get("scanned"):
-        raise RuntimeError("Semgrep heç bir faylı skan etmədi")
+    scanned_paths = data.get("paths", {}).get("scanned", [])
+    if not scanned_paths or not any(str(path).lower().endswith(".php") for path in scanned_paths):
+        php_count = 0
+        samples = []
+        for path in destination.rglob("*.php"):
+            php_count += 1
+            if len(samples) < 3:
+                samples.append(str(path.relative_to(destination)))
+        detail = (f"Semgrep PHP fayllarını skan etmədi. PHP faylı: {php_count}; "
+                  f"skan edilmiş fayl: {len(scanned_paths)}; nümunə: {samples}; "
+                  f"Semgrep: {result.stderr[-1500:]}")
+        if php_count:
+            raise ScanCoverageError(detail)
+        if not scanned_paths:
+            raise RuntimeError(detail)
     return data.get("results", [])
 
 
@@ -193,6 +210,9 @@ def write_reports(run_dir, report):
     if report.get("catalog_error"):
         lines.append("Kataloq xətası: " + report["catalog_error"])
         lines.append("")
+    if report.get("scan_error"):
+        lines.append("Skan xətası: " + report["scan_error"])
+        lines.append("")
     elif report.get("catalog_exhausted"):
         lines.append("Populyar plugin siyahısı bitdi; tapıntı aşkarlanmadı.")
         lines.append("")
@@ -245,6 +265,8 @@ def process_plugin(plugin, semgrep, archives, extracted, run_dir, report):
     except Exception as exc:
         entry["error"] = str(exc)
         print(f"  XƏTA: {exc}", file=sys.stderr, flush=True)
+        if isinstance(exc, ScanCoverageError):
+            raise
     finally:
         write_reports(run_dir, report)
     return bool(entry["findings"])
@@ -302,11 +324,18 @@ def main():
                 continue
             seen.add(slug)
             new_plugins += 1
-            has_findings = process_plugin(
-                plugin, semgrep, archives, extracted, run_dir, report
-            )
+            try:
+                has_findings = process_plugin(
+                    plugin, semgrep, archives, extracted, run_dir, report
+                )
+            except ScanCoverageError as exc:
+                report["scan_error"] = str(exc)
+                write_reports(run_dir, report)
+                break
             if has_findings:
                 break
+        if report.get("scan_error"):
+            break
         if has_findings:
             break
         if new_plugins == 0:
@@ -321,7 +350,7 @@ def main():
 
     print(f"\nHesabat: {run_dir / 'report.txt'}")
     print(f"JSON: {run_dir / 'report.json'}")
-    scan_failed = (bool(report.get("catalog_error"))
+    scan_failed = (bool(report.get("catalog_error") or report.get("scan_error"))
                    or any(item["status"] == "error" for item in report["plugins"]))
     if has_findings and not args.no_codex:
         try:
